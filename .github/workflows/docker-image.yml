@@ -1,0 +1,232 @@
+name: Build, test and deploy to Nomad
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weather-lab-nomad-deployment
+  cancel-in-progress: false
+
+env:
+  NOMAD_ADDR: http://127.0.0.1:4646
+  CONSUL_HTTP_ADDR: http://127.0.0.1:8500
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_attempt }}
+
+jobs:
+  build-test-deploy:
+    name: Build, test and deploy
+    runs-on: [self-hosted, docker, weather-lab]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout the exact pushed commit
+        uses: actions/checkout@v6
+
+      - name: Add common Homebrew paths
+        shell: bash
+        run: |
+          if [ -d /opt/homebrew/bin ]; then
+            echo "/opt/homebrew/bin" >> "${GITHUB_PATH}"
+          fi
+
+          if [ -d /usr/local/bin ]; then
+            echo "/usr/local/bin" >> "${GITHUB_PATH}"
+          fi
+
+      - name: Verify runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          command -v docker
+          command -v nomad
+          command -v consul
+          command -v curl
+
+          docker version
+          docker info >/dev/null
+
+          nomad version
+          nomad node status
+          nomad node status -self
+
+          consul version
+          consul members
+
+      - name: Build commit-specific Docker images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker build \
+            --pull \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "nomad-weather-service:${IMAGE_TAG}" \
+            ./weather-service
+
+          docker build \
+            --pull \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "nomad-weather-gateway:${IMAGE_TAG}" \
+            ./weather-gateway
+
+          docker image inspect "nomad-weather-service:${IMAGE_TAG}" >/dev/null
+          docker image inspect "nomad-weather-gateway:${IMAGE_TAG}" >/dev/null
+
+      - name: Test both images before deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          network="weather-ci-${suffix}"
+          service_container="weather-service-ci-${suffix}"
+          gateway_container="weather-gateway-ci-${suffix}"
+
+          cleanup() {
+            docker rm -f "${gateway_container}" "${service_container}" >/dev/null 2>&1 || true
+            docker network rm "${network}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker network create "${network}" >/dev/null
+
+          docker run -d \
+            --name "${service_container}" \
+            --network "${network}" \
+            --network-alias weather-service \
+            -e PORT=3001 \
+            "nomad-weather-service:${IMAGE_TAG}" >/dev/null
+
+          docker run -d \
+            --name "${gateway_container}" \
+            --network "${network}" \
+            -e PORT=3000 \
+            -e WEATHER_SERVICE_URL=http://weather-service:3001 \
+            -p 127.0.0.1::3000 \
+            "nomad-weather-gateway:${IMAGE_TAG}" >/dev/null
+
+          gateway_port="$(docker port "${gateway_container}" 3000/tcp | awk -F: 'NR==1 {print $NF}')"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "http://127.0.0.1:${gateway_port}/health" >/dev/null; then
+              break
+            fi
+
+            if [ "${attempt}" -eq 30 ]; then
+              docker logs "${service_container}" || true
+              docker logs "${gateway_container}" || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:${gateway_port}/api/weather/Ankara"
+          echo
+
+      - name: Validate Nomad job specifications
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nomad job validate \
+            -var="image_tag=${IMAGE_TAG}" \
+            nomad/weather-service.nomad.hcl
+
+          nomad job validate \
+            -var="image_tag=${IMAGE_TAG}" \
+            nomad/weather-gateway.nomad.hcl
+
+      - name: Preview Nomad scheduler changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          plan_job() {
+            local job_file="$1"
+            local exit_code=0
+
+            nomad job plan \
+              -var="image_tag=${IMAGE_TAG}" \
+              "${job_file}" || exit_code=$?
+
+            # Nomad plan returns 1 when allocations will change. That is a valid plan.
+            if [ "${exit_code}" -ne 0 ] && [ "${exit_code}" -ne 1 ]; then
+              return "${exit_code}"
+            fi
+          }
+
+          plan_job nomad/weather-service.nomad.hcl
+          plan_job nomad/weather-gateway.nomad.hcl
+
+      - name: Deploy weather-service first
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nomad job run \
+            -var="image_tag=${IMAGE_TAG}" \
+            nomad/weather-service.nomad.hcl
+
+      - name: Deploy weather-gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          nomad job run \
+            -var="image_tag=${IMAGE_TAG}" \
+            nomad/weather-gateway.nomad.hcl
+
+      - name: Run post-deployment smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/health >/dev/null; then
+              break
+            fi
+
+            if [ "${attempt}" -eq 30 ]; then
+              echo "Gateway did not become healthy."
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          curl --fail --silent --show-error http://127.0.0.1:8080/health
+          echo
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/weather/Ankara
+          echo
+
+      - name: Show deployment diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          nomad job status weather-service || true
+          nomad job status weather-gateway || true
+          nomad job allocs weather-service || true
+          nomad job allocs weather-gateway || true
+          consul catalog services || true
+
+      - name: Write deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Nomad deployment"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Image tag: \`${IMAGE_TAG}\`"
+            echo "- Nomad address: \`${NOMAD_ADDR}\`"
+            echo "- Gateway: http://127.0.0.1:8080"
+          } >> "${GITHUB_STEP_SUMMARY}"

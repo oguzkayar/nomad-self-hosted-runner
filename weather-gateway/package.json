@@ -1,0 +1,13 @@
+{
+  "name": "nomad-weather-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Consul ile keşfedilen weather-service'e çağrı yapan basit gateway backend'i",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

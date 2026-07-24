@@ -1,0 +1,13 @@
+{
+  "name": "nomad-weather-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Basit, anahtarsız ve deterministik hava durumu backend'i",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
