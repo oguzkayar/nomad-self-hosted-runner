@@ -28,26 +28,29 @@ jobs:
       - name: Checkout the exact pushed commit
         uses: actions/checkout@v6
 
-      - name: Add common Homebrew paths
-        shell: bash
-        run: |
-          if [ -d /opt/homebrew/bin ]; then
-            echo "/opt/homebrew/bin" >> "${GITHUB_PATH}"
-          fi
-
-          if [ -d /usr/local/bin ]; then
-            echo "/usr/local/bin" >> "${GITHUB_PATH}"
-          fi
-
       - name: Verify runner prerequisites
         shell: bash
         run: |
           set -euo pipefail
 
-          command -v docker
-          command -v nomad
-          command -v consul
-          command -v curl
+          required_tools=(
+            docker
+            nomad
+            consul
+            curl
+          )
+      
+          for tool in "${required_tools[@]}"; do
+            if ! command -v "${tool}" >/dev/null 2>&1; then
+              echo "::error::Required tool '${tool}' is not available in PATH."
+              exit 1
+            fi
+      
+            echo "${tool}: $(command -v "${tool}")"
+          done
+      
+          echo "Runner OS: ${RUNNER_OS}"
+          echo "Runner architecture: ${RUNNER_ARCH}"
 
           docker version
           docker info >/dev/null
@@ -64,20 +67,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker build \
-            --pull \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "nomad-weather-service:${IMAGE_TAG}" \
-            ./weather-service
-
-          docker build \
-            --pull \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "nomad-weather-gateway:${IMAGE_TAG}" \
-            ./weather-gateway
-
-          docker image inspect "nomad-weather-service:${IMAGE_TAG}" >/dev/null
-          docker image inspect "nomad-weather-gateway:${IMAGE_TAG}" >/dev/null
+          ./scripts/build-images.sh "${IMAGE_TAG}"
 
       - name: Test both images before deployment
         shell: bash
@@ -115,7 +105,7 @@ jobs:
           gateway_port="$(docker port "${gateway_container}" 3000/tcp | awk -F: 'NR==1 {print $NF}')"
 
           for attempt in $(seq 1 30); do
-            if curl --fail --silent "http://127.0.0.1:${gateway_port}/health" >/dev/null; then
+            if curl --fail --silent "http://127.0.0.1:${gateway_port}/api/weather/Ankara" >/dev/null; then
               break
             fi
 
@@ -127,10 +117,6 @@ jobs:
 
             sleep 1
           done
-
-          curl --fail --silent --show-error \
-            "http://127.0.0.1:${gateway_port}/api/weather/Ankara"
-          echo
 
       - name: Validate Nomad job specifications
         shell: bash
