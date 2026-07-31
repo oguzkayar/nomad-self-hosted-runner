@@ -1,6 +1,6 @@
 variable "image_tag" {
   type        = string
-  description = "Docker image tag produced by the CI/CD pipeline."
+  description = "Docker image tag."
   default     = "1.0"
 }
 
@@ -27,7 +27,6 @@ job "weather-gateway" {
 
     network {
       port "http" {
-        static = 8080
         to     = 3000
       }
     }
