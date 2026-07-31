@@ -1,4 +1,3 @@
-name: Build, test and deploy to Nomad
 
 on:
   push:
@@ -187,10 +186,5 @@ jobs:
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Image tag: \`${IMAGE_TAG}\`"
             echo "- Nomad address: \`${NOMAD_ADDR}\`"
-      
-            if [ -n "${GATEWAY_URL:-}" ]; then
-              echo "- Gateway: \`${GATEWAY_URL}\`"
-            else
-              echo "- Gateway: discovery unavailable"
-            fi
+            echo "- Gateway: discovered dynamically through Consul"
           } >> "${GITHUB_STEP_SUMMARY}"
