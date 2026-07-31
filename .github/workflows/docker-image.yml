@@ -145,21 +145,21 @@ jobs:
 
       - name: Deploy weather-service first
         shell: bash
+        timeout-minutes: 5
         run: |
-          set -euo pipefail
-
-          nomad job run \
-            -var="image_tag=${IMAGE_TAG}" \
-            nomad/weather-service.nomad.hcl
+          ./scripts/deploy-nomad-job.sh \
+            weather-service \
+            nomad/weather-service.nomad.hcl \
+            "${IMAGE_TAG}"
 
       - name: Deploy weather-gateway
         shell: bash
+        timeout-minutes: 5
         run: |
-          set -euo pipefail
-
-          nomad job run \
-            -var="image_tag=${IMAGE_TAG}" \
-            nomad/weather-gateway.nomad.hcl
+          ./scripts/deploy-nomad-job.sh \
+            weather-gateway \
+            nomad/weather-gateway.nomad.hcl \
+            "${IMAGE_TAG}"
 
       - name: Run post-deployment smoke tests
         shell: bash
