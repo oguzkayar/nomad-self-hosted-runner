@@ -32,33 +32,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          required_tools=(
-            docker
-            nomad
-            consul
-            curl
-          )
       
-          for tool in "${required_tools[@]}"; do
+          for tool in docker nomad consul curl jq; do
             if ! command -v "${tool}" >/dev/null 2>&1; then
-              echo "::error::Required tool '${tool}' is not available in PATH."
+              echo "Required command not found in PATH: ${tool}"
               exit 1
             fi
-      
-            echo "${tool}: $(command -v "${tool}")"
           done
       
           echo "Runner OS: ${RUNNER_OS}"
           echo "Runner architecture: ${RUNNER_ARCH}"
-
+      
           docker version
           docker info >/dev/null
-
+      
           nomad version
           nomad node status
           nomad node status -self
-
+      
           consul version
           consul members
 
