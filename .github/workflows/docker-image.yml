@@ -145,7 +145,7 @@ jobs:
 
       - name: Deploy weather-service first
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 4
         run: |
           ./scripts/deploy-nomad-job.sh \
             weather-service \
@@ -154,7 +154,7 @@ jobs:
 
       - name: Deploy weather-gateway
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 4
         run: |
           ./scripts/deploy-nomad-job.sh \
             weather-gateway \
@@ -163,6 +163,7 @@ jobs:
 
       - name: Run post-deployment smoke tests
         shell: bash
+        timeout-minutes: 3
         run: |
           ./scripts/test.sh
 
