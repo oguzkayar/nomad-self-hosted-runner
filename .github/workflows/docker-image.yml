@@ -242,5 +242,10 @@ jobs:
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Image tag: \`${IMAGE_TAG}\`"
             echo "- Nomad address: \`${NOMAD_ADDR}\`"
-            echo "- Gateway: http://127.0.0.1:8080"
+      
+            if [ -n "${GATEWAY_URL:-}" ]; then
+              echo "- Gateway: \`${GATEWAY_URL}\`"
+            else
+              echo "- Gateway: discovery unavailable"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
