@@ -1,0 +1,25 @@
+# Git metadata
+.git
+.github
+
+# Local/editor/OS files
+.DS_Store
+**/.DS_Store
+__MACOSX
+
+# Node.js dependencies and generated output
+node_modules
+**/node_modules
+**/coverage
+**/dist
+npm-debug.log*
+
+# Local environment/secrets
+.env
+.env.*
+!.env.example
+
+# Files not required to build the application images
+nomad
+scripts
+*.zip

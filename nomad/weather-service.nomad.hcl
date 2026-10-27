@@ -1,6 +1,6 @@
 variable "image_tag" {
   type        = string
-  description = "Docker image tag produced by the CI/CD pipeline."
+  description = "Docker image tag."
   default     = "1.0"
 }
 
